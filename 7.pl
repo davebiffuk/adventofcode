@@ -2,61 +2,73 @@
 
 #use bigint;
 #use integer;
+use strict;
+use Data::Dumper;
+use Memoize;
+
+my %wire;
+my $wanted = shift || 'a';
 
 while(<>) {
     chomp;
-    push @rules, $_;
-}
-
-$count=1;
-do {
-    $again=0;
-    print "\rpass ", $count, "... ";
-    foreach $_ (@rules) {
-        if(m/^(\d+) -> (\S+)/) {
-            $wire{$2} = int($1);
-            next;
+    if(m/^\s*(.+)\s+->\s+(\S+)/) {
+        if(defined($wire{$2})) {
+            die "already had a rule for ".$2." (".$wire{$2}.")\n";
         }
-        if(m/^(\S+) -> (\S+)/) {
-            if(!defined($wire{$1})) { $again=1; next; }
-            $wire{$2} = int($wire{$1});
-            next;
-        }
-        if(m/^(\S+) AND (\S+) -> (\S+)/) {
-            if(!defined($wire{$1})) { $again=1; next; }
-            if(!defined($wire{$2})) { $again=1; next; }
-            $wire{$3} = int($wire{$1}) & int($wire{$2});
-            next;
-        }
-        if(m/^(\S+) OR (\S+) -> (\S+)/) {
-            if(!defined($wire{$1})) { $again=1; next; }
-            if(!defined($wire{$2})) { $again=1; next; }
-            $wire{$3} = int($wire{$1}) | int($wire{$2});
-            next;
-        }
-        if(m/^(\S+) LSHIFT (\d+) -> (\S+)/) {
-            if(!defined($wire{$1})) { $again=1; next; }
-            $wire{$3} = int($wire{$1}) << int($2);
-            next;
-        }
-        if(m/^(\S+) RSHIFT (\d+) -> (\S+)/) {
-            if(!defined($wire{$1})) { $again=1; next; }
-            $wire{$3} = int($wire{$1}) >> int($2);
-            next;
-        }
-        if(m/^NOT (\S+) -> (\S+)/) {
-            if(!defined($wire{$1})) { $again=1; next; }
-            $wire{$2} = (~int($wire{$1})) & (2**16-1);
-            next;
-        }
-        print "couldn't parse line: ", $_, "\n";
-        exit;
+        $wire{$2}=$1;
+    } else {
+        die "can't parse this: $_\n";
     }
-    $count++;
-} while ($again==1);
-
-print "\n";
-
-foreach $i (sort keys %wire) {
-    print $i, ": ", int($wire{$i}), "\n";
 }
+
+#print Dumper(%wire), "\n";
+#exit;
+
+sub valueof {
+    my $w = shift;
+
+    if(!defined($wire{$w})) { die "no rule for '".$w."'\n"; }
+    my $r = $wire{$w};
+
+#    print "<", $w, "> = <", $r, ">\n";
+
+    if($r =~ m/^(\d+)$/) {
+        return($1);
+    }
+    if($r =~ m/^(\S+)$/) {
+        return(valueof($1));
+    }
+    if($r =~ m/^(\d+) AND (\S+)$/) {
+        my $a=$1; my $b=$2;
+        return(int($a) & int(valueof($b)));
+    }
+    if($r =~ m/^(\S+) AND (\S+)$/) {
+        my $a=$1; my $b=$2;
+        return(int(valueof($a)) & int(valueof($b)));
+    }
+    if($r =~ m/^(\S+) OR (\S+)$/) {
+        my $a=$1; my $b=$2;
+        return(int(valueof($a)) | int(valueof($b)));
+    }
+    if($r =~ m/^(\S+) LSHIFT (\d+)$/) {
+        my $a=$1; my $b=$2;
+        return(int(valueof($a)) << int($b));
+    }
+    if($r =~ m/^(\S+) RSHIFT (\d+)$/) {
+        my $a=$1; my $b=$2;
+        return(int(valueof($a)) >> int($b));
+    }
+    if($r =~ m/^NOT (\S+)$/) {
+        return((~int(valueof($1))) & (2**16-1));
+    }
+}
+
+memoize('valueof');
+
+print "wire $wanted = ", valueof("$wanted"), "\n";
+#print "wire b = ", valueof("b"), "\n";
+#print "wire f = ", valueof("f"), "\n";
+#print "wire lu = ", valueof("lu"), "\n";
+#foreach $i ("d", "e", "f", "g", "h", "i", "x", "y") {
+#    print "wire $i = ", valueof($i), "\n";
+#}
